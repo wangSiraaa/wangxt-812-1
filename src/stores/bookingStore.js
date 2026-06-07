@@ -75,21 +75,46 @@ export const store = reactive({
   calculateCancellationFee(booking) {
     const bookingStart = dayjs(booking.date + ' ' + booking.timeSlotId.split('-')[0])
     const hoursUntilStart = bookingStart.diff(dayjs(), 'hour')
+    const amount = booking.price || 100
     
     if (hoursUntilStart >= 24) {
-      return { fee: 0, type: 'free', message: '距离开场超过24小时，可免费取消' }
+      return {
+        fee: 0,
+        percent: 0,
+        refund: amount,
+        amount: amount,
+        reason: '距离开场超过24小时，可免费取消',
+        type: 'free'
+      }
     } else if (hoursUntilStart > 0) {
-      const fee = Math.round(booking.price * 0.3)
-      return { fee, type: 'late', message: `距离开场不足24小时，将扣除${fee}元（30%违约金）` }
+      const fee = Math.round(amount * 0.3)
+      const refund = amount - fee
+      return {
+        fee: fee,
+        percent: 30,
+        refund: refund,
+        amount: amount,
+        reason: '距离开场不足24小时，扣除30%违约金',
+        type: 'late'
+      }
     } else {
-      const fee = Math.round(booking.price * 1.0)
-      return { fee, type: 'noShow', message: `已过开场时间，将扣除${fee}元（全额违约金）` }
+      const fee = Math.round(amount * 1.0)
+      const refund = amount - fee
+      return {
+        fee: fee,
+        percent: 100,
+        refund: refund,
+        amount: amount,
+        reason: '已过开场时间，全额扣除违约金',
+        type: 'noShow'
+      }
     }
   },
 
   createBooking(bookingData) {
     const timeSlot = TIME_SLOTS.find(t => t.id === bookingData.timeSlotId)
-    const member = this.members.find(m => m.id === bookingData.memberId)
+    const memberId = bookingData.memberId || (this.currentMember ? this.currentMember.id : null)
+    const member = this.members.find(m => m.id === memberId)
     
     if (!member) return { success: false, message: '会员信息不存在' }
 
@@ -110,6 +135,7 @@ export const store = reactive({
     const newBooking = {
       id: 'b' + Date.now(),
       ...bookingData,
+      memberId: memberId,
       memberName: member.name,
       price: timeSlot && timeSlot.isGolden ? 200 : 100,
       status: 'confirmed',
@@ -153,6 +179,14 @@ export const store = reactive({
 
   resetData() {
     localStorage.removeItem(STORAGE_KEY)
+    const freshData = generateInitialData()
+    this.venues = freshData.venues
+    this.members = freshData.members
+    this.maintenanceSlots = freshData.maintenanceSlots
+    this.bookings = freshData.bookings
+    this.timeSlots = freshData.timeSlots
+    this.cancellationRules = freshData.cancellationRules
+    this.currentMember = null
   },
 
   getMemberBookings(memberId) {

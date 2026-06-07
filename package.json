@@ -15,18 +15,5 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
     "vite": "^5.0.0"
-  },
-  "description": "This folder is prepared for `wangxt-812-1`.",
-  "main": "gen.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/wangSiraaa/wangxt-812-1.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/wangSiraaa/wangxt-812-1/issues"
-  },
-  "homepage": "https://github.com/wangSiraaa/wangxt-812-1#readme"
+  }
 }
