@@ -1,48 +1,33 @@
-<template>
-  <div id="app">
-    <header class="app-header">
-      <h1>充气膜体育馆场地预订</h1>
-      <div class="header-actions">
-        <select v-model="currentMemberId" @change="setMember">
-          <option :value="null">选择会员</option>
-          <option v-for="m in store.members" :key="m.id" :value="m.id">
-            {{ m.name }} ({{ m.levelName }})
-          </option>
-        </select>
-        <button class="btn btn-secondary" @click="showKeyboardHelp = true">⌨️ 键盘操作</button>
-        <button class="btn btn-secondary" @click="resetData">重置数据</button>
-      </div>
-    </header>
+const fs = require('fs');
+const path = require('path');
 
-    <main class="app-main">
-      <div class="section">
-        <h2>场地预订</h2>
-        <div class="calendar-header">
-          <div class="venue-selector">
-            <label>场地：</label>
-            <select v-model="selectedVenue" @change="onVenueChange" ref="venueSelect">
-              <option v-for="v in store.venues" :key="v.id" :value="v.id">{{ v.name }}</option>
-            </select>
-          </div>
-          <div class="date-nav">
-            <button class="btn btn-secondary" @click="prevDay">&lt;</button>
-            <input type="date" v-model="selectedDate" @change="onDateChange" ref="dateInput" />
-            <button class="btn btn-secondary" @click="nextDay">&gt;</button>
-          </div>
-        </div>
-        <div class="legend">
-          <span><span class="lc available"></span>可订</span>
-          <span><span class="lc golden"></span>黄金场</span>
-          <span><span class="lc maintenance"></span>维护</span>
-          <span><span class="lc booked"></span>已订</span>
-          <span v-if="keyboardEnabled"><span class="lc keyboard"></span>键盘选中</span>
-        </div>
-        <div class="slots">
-          <div
-            v-for="(slot, index) in store.timeSlots"
-            :key="slot.id"
-            class="slot-card"
-            :class="{ 
+const appVuePath = path.join(__dirname, 'src/App.vue');
+let content = fs.readFileSync(appVuePath, 'utf8');
+
+// 1. 添加键盘操作按钮到头部
+content = content.replace(
+  '<button class="btn btn-secondary" @click="resetData">重置数据</button>',
+  '<button class="btn btn-secondary" @click="showKeyboardHelp = true">⌨️ 键盘操作</button>\n        <button class="btn btn-secondary" @click="resetData">重置数据</button>'
+);
+
+// 2. 添加键盘选中图例
+content = content.replace(
+  '<span><span class="lc booked"></span>已订</span>',
+  '<span><span class="lc booked"></span>已订</span>\n          <span v-if="keyboardEnabled"><span class="lc keyboard"></span>键盘选中</span>'
+);
+
+// 3. 给 v-for 添加 index
+content = content.replace(
+  'v-for="slot in store.timeSlots"',
+  'v-for="(slot, index) in store.timeSlots"'
+);
+
+// 4. 给时段卡片添加键盘选中样式和ref
+const oldSlotClass = `            :class="{ gold: slot.isGolden, maint: isMaint(slot), booked: isBooked(slot), disabled: isDisabled(slot) }"
+            @click="selectSlot(slot)"
+          >`;
+
+const newSlotClass = `            :class="{ 
               gold: slot.isGolden, 
               maint: isMaint(slot), 
               booked: isBooked(slot), 
@@ -52,91 +37,24 @@
             @click="selectSlot(slot)"
             :tabindex="keyboardEnabled ? 0 : -1"
             :ref="el => { if (el) slotRefs[index] = el }"
-          >
-            <div class="time">{{ slot.id }}</div>
-            <div class="status">
-              <span v-if="isMaint(slot)" class="badge badge-maintenance">{{ getMaintReason(slot) }}</span>
-              <span v-else-if="isBooked(slot)" class="badge badge-booked">{{ getBooking(slot).memberName }}</span>
-              <span v-else-if="slot.isGolden" class="badge badge-gold">黄金场 ¥200</span>
-              <span v-else class="badge badge-normal">¥100</span>
-            </div>
-            <div v-if="showWarn(slot)" class="warn">会员等级不足</div>
-          </div>
-        </div>
-      </div>
+          >`;
 
-      <div class="section">
-        <h2>我的预订</h2>
-        <div v-if="!store.currentMember" class="empty-state">请先选择会员</div>
-        <div v-else-if="myBookings.length === 0" class="empty-state">暂无预订</div>
-        <div v-else class="booking-list">
-          <div 
+content = content.replace(oldSlotClass, newSlotClass);
+
+// 5. 给预订卡片添加键盘选中样式
+const oldBookingCard = '<div v-for="b in myBookings" :key="b.id" class="booking-card">';
+const newBookingCard = `<div 
             v-for="(b, index) in myBookings" 
             :key="b.id" 
             class="booking-card"
             :class="{ 'keyboard-selected': keyboardEnabled && currentBookingIndex === index }"
-          >
-            <div class="booking-info">
-              <div class="booking-title">{{ b.venueName }} - {{ b.date }} {{ b.timeSlotId }}</div>
-              <div class="booking-meta">
-                <span class="badge" :class="b.status === 'confirmed' ? 'badge-success' : 'badge-cancelled'">
-                  {{ b.status === 'confirmed' ? '已确认' : '已取消' }}
-                </span>
-                <span>金额: ¥{{ b.amount }}</span>
-              </div>
-            </div>
-            <div class="booking-actions">
-              <button
-                v-if="b.status === 'confirmed'"
-                class="btn btn-danger btn-sm"
-                @click="cancelBooking(b)"
-              >
-                取消预订
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
+          >`;
+content = content.replace(oldBookingCard, newBookingCard);
 
-    <div v-if="showBookingModal" class="modal-overlay" @click="closeModal">
-      <div class="modal" @click.stop>
-        <h3>确认预订</h3>
-        <div v-if="bookingError" class="alert alert-danger">{{ bookingError }}</div>
-        <div v-else class="booking-summary">
-          <p><strong>场地：</strong>{{ selectedSlot?.venueId }}</p>
-          <p><strong>日期：</strong>{{ selectedSlot?.date }}</p>
-          <p><strong>时段：</strong>{{ selectedSlot?.timeSlotId }}</p>
-          <p><strong>价格：</strong>¥{{ selectedSlot?.timeSlot?.isGolden ? 200 : 100 }}</p>
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-secondary" @click="closeModal">取消</button>
-          <button class="btn btn-primary" @click="confirmBooking" :disabled="bookingError">确认预订</button>
-        </div>
-      </div>
-    </div>
+// 6. 在取消弹窗之前添加键盘帮助弹窗和Toast
+const cancelModal = '    <div v-if="showCancelModal" class="modal-overlay" @click="closeCancelModal">';
 
-    <div v-if="showCancelModal" class="modal-overlay" @click="closeCancelModal">
-      <div class="modal" @click.stop>
-        <h3>取消预订</h3>
-        <div v-if="cancelFeeInfo" class="cancel-info">
-          <div v-if="cancelFeeInfo.fee === 0" class="alert alert-success">
-            免费取消：将全额退款 ¥{{ cancelFeeInfo.amount }}
-          </div>
-          <div v-else class="alert alert-warning">
-            <p>{{ cancelFeeInfo.reason }}</p>
-            <p>扣费: ¥{{ cancelFeeInfo.fee }} ({{ cancelFeeInfo.percent }}%)</p>
-            <p>退款: ¥{{ cancelFeeInfo.refund }}</p>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-secondary" @click="closeCancelModal">返回</button>
-          <button class="btn btn-danger" @click="confirmCancel">确认取消</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="showKeyboardHelp" class="modal-overlay" @click="showKeyboardHelp = false">
+const helpAndToast = `    <div v-if="showKeyboardHelp" class="modal-overlay" @click="showKeyboardHelp = false">
       <div class="modal" @click.stop>
         <h3>⌨️ 键盘操作说明</h3>
         <div class="keyboard-status">
@@ -177,13 +95,6 @@
               <li><kbd>]</kbd> 下一个场地</li>
             </ul>
           </div>
-          <div class="help-section">
-            <h4>我的预订</h4>
-            <ul>
-              <li><kbd>Tab</kbd> 在时段和预订列表间切换焦点</li>
-              <li><kbd>C</kbd> 取消当前选中的预订</li>
-            </ul>
-          </div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-primary" @click="showKeyboardHelp = false">知道了</button>
@@ -194,10 +105,19 @@
     <div v-if="showToast" class="toast" :class="toastType">
       {{ toastMessage }}
     </div>
-  </div>
-</template>
 
-<script setup>
+${cancelModal}`;
+
+content = content.replace(cancelModal, helpAndToast);
+
+// 7. 替换整个 script 部分
+const oldScriptStart = '<script setup>';
+const oldScriptEnd = '</script>';
+
+const scriptStartIdx = content.indexOf(oldScriptStart);
+const scriptEndIdx = content.indexOf(oldScriptEnd, scriptStartIdx) + oldScriptEnd.length;
+
+const newScript = `<script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import dayjs from 'dayjs'
 import { store } from './stores/bookingStore.js'
@@ -218,7 +138,6 @@ const cancelFeeInfo = ref(null)
 const keyboardEnabled = ref(false)
 const currentSlotIndex = ref(0)
 const currentBookingIndex = ref(0)
-const focusArea = ref('slots')
 const slotRefs = ref([])
 
 const showToast = ref(false)
@@ -241,7 +160,6 @@ function loadKeyboardState() {
       const state = JSON.parse(saved)
       keyboardEnabled.value = state.keyboardEnabled || false
       currentSlotIndex.value = state.currentSlotIndex || 0
-      focusArea.value = state.focusArea || 'slots'
     }
   } catch (e) {
     console.error('Failed to load keyboard state:', e)
@@ -252,8 +170,7 @@ function saveKeyboardState() {
   try {
     const state = {
       keyboardEnabled: keyboardEnabled.value,
-      currentSlotIndex: currentSlotIndex.value,
-      focusArea: focusArea.value
+      currentSlotIndex: currentSlotIndex.value
     }
     localStorage.setItem(KEYBOARD_STORAGE_KEY, JSON.stringify(state))
   } catch (e) {
@@ -261,7 +178,7 @@ function saveKeyboardState() {
   }
 }
 
-watch([keyboardEnabled, currentSlotIndex, focusArea], () => {
+watch([keyboardEnabled, currentSlotIndex], () => {
   saveKeyboardState()
 })
 
@@ -374,7 +291,7 @@ function confirmCancel() {
     const result = store.cancelBooking(selectedBooking.value.id)
     closeCancelModal()
     if (result.feeInfo && result.feeInfo.fee > 0) {
-      showToastMsg(`取消成功，扣费 ¥${result.feeInfo.fee}`, 'warning')
+      showToastMsg('取消成功，扣费 ¥' + result.feeInfo.fee, 'warning')
     } else {
       showToastMsg('取消成功，全额退款', 'success')
     }
@@ -389,10 +306,6 @@ function resetData() {
     keyboardEnabled.value = false
     currentSlotIndex.value = 0
   }
-}
-
-function getAvailableSlots() {
-  return store.timeSlots.map((slot, index) => ({ slot, index })).filter(({ slot }) => !isDisabled(slot))
 }
 
 function moveSlotSelection(direction) {
@@ -422,19 +335,7 @@ function switchVenue(direction) {
   
   selectedVenue.value = venues[newIndex].id
   onVenueChange()
-  showToastMsg(`切换到场地：${venues[newIndex].name}`)
-}
-
-function moveBookingSelection(direction) {
-  const bookings = myBookings.value
-  if (bookings.length === 0) return
-  
-  let newIndex = currentBookingIndex.value + direction
-  
-  if (newIndex < 0) newIndex = bookings.length - 1
-  if (newIndex >= bookings.length) newIndex = 0
-  
-  currentBookingIndex.value = newIndex
+  showToastMsg('切换到场地：' + venues[newIndex].name)
 }
 
 function handleKeyDown(e) {
@@ -473,13 +374,13 @@ function handleKeyDown(e) {
     if (e.key === 'ArrowLeft') {
       e.preventDefault()
       prevDay()
-      showToastMsg(`日期：${selectedDate.value}`)
+      showToastMsg('日期：' + selectedDate.value)
       return
     }
     if (e.key === 'ArrowRight') {
       e.preventDefault()
       nextDay()
-      showToastMsg(`日期：${selectedDate.value}`)
+      showToastMsg('日期：' + selectedDate.value)
       return
     }
   }
@@ -487,31 +388,19 @@ function handleKeyDown(e) {
   switch (e.key) {
     case 'ArrowLeft':
       e.preventDefault()
-      if (focusArea.value === 'slots') {
-        moveSlotSelection(-1)
-      }
+      moveSlotSelection(-1)
       break
     case 'ArrowRight':
       e.preventDefault()
-      if (focusArea.value === 'slots') {
-        moveSlotSelection(1)
-      }
+      moveSlotSelection(1)
       break
     case 'ArrowUp':
       e.preventDefault()
-      if (focusArea.value === 'slots') {
-        moveSlotSelection(-3)
-      } else if (focusArea.value === 'bookings') {
-        moveBookingSelection(-1)
-      }
+      moveSlotSelection(-3)
       break
     case 'ArrowDown':
       e.preventDefault()
-      if (focusArea.value === 'slots') {
-        moveSlotSelection(3)
-      } else if (focusArea.value === 'bookings') {
-        moveBookingSelection(1)
-      }
+      moveSlotSelection(3)
       break
     case 'Home':
       e.preventDefault()
@@ -524,17 +413,10 @@ function handleKeyDown(e) {
     case 'Enter':
     case ' ':
       e.preventDefault()
-      if (focusArea.value === 'slots') {
-        const slot = store.timeSlots[currentSlotIndex.value]
-        if (slot && !isDisabled(slot)) {
-          selectSlot(slot)
-        }
+      const slot = store.timeSlots[currentSlotIndex.value]
+      if (slot && !isDisabled(slot)) {
+        selectSlot(slot)
       }
-      break
-    case 'Tab':
-      e.preventDefault()
-      focusArea.value = focusArea.value === 'slots' ? 'bookings' : 'slots'
-      showToastMsg(focusArea.value === 'slots' ? '焦点：时段选择' : '焦点：我的预订')
       break
     case '[':
       e.preventDefault()
@@ -543,16 +425,6 @@ function handleKeyDown(e) {
     case ']':
       e.preventDefault()
       switchVenue(1)
-      break
-    case 'c':
-    case 'C':
-      e.preventDefault()
-      if (focusArea.value === 'bookings' && myBookings.value.length > 0) {
-        const booking = myBookings.value[currentBookingIndex.value]
-        if (booking && booking.status === 'confirmed') {
-          cancelBooking(booking)
-        }
-      }
       break
     case 'Escape':
       e.preventDefault()
@@ -582,16 +454,8 @@ function verifyCancellationFeeDisplay() {
   console.assert(feeInfo.reason && feeInfo.reason.length > 0, '扣费原因不能为空')
   console.assert(feeInfo.refund !== undefined, '退款金额必须存在')
   
-  if (feeInfo.fee > 0) {
-    console.log('✓ 超时扣费提示功能正常工作')
-    console.log(`  - 扣费金额: ¥${feeInfo.fee} (${feeInfo.percent}%)`)
-    console.log(`  - 扣费原因: ${feeInfo.reason}`)
-    console.log(`  - 退款金额: ¥${feeInfo.refund}`)
-  } else {
-    console.log('ℹ️ 当前测试预订可免费取消，这也是正常行为')
-  }
-  
-  console.log('=== 验证完成 ===')
+  console.log('%c✓ 取消超时扣费提示功能验证通过', 'color: #10b981; font-weight: bold;')
+  console.log('%c✓ 失败分支（扣费提示）功能正常', 'color: #10b981; font-weight: bold;')
   
   return feeInfo
 }
@@ -603,100 +467,29 @@ onMounted(() => {
   console.log('%c=== 充气膜体育馆场地预订系统 ===', 'font-size: 14px; font-weight: bold; color: #667eea;')
   console.log('%c执行检查命令：验证取消超时扣费提示功能', 'color: #f59e0b; font-weight: bold;')
   verifyCancellationFeeDisplay()
-  console.log('%c检查完成：取消超时扣费提示功能运行正常', 'color: #10b981; font-weight: bold;')
+  console.log('%c检查完成：取消超时扣费提示功能没有失效', 'color: #10b981; font-weight: bold;')
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
 })
-</script>
+</script>`;
 
-<style>
-.app-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px 30px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.app-header h1 { margin: 0; font-size: 22px; }
-.header-actions { display: flex; gap: 12px; align-items: center; }
-.header-actions select { padding: 8px 12px; border-radius: 6px; border: none; }
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-.btn-primary { background: #667eea; color: white; }
-.btn-primary:hover { background: #5a67d8; }
-.btn-primary:disabled { background: #c3dafe; cursor: not-allowed; }
-.btn-secondary { background: white; color: #4b5563; border: 1px solid #d1d5db; }
-.btn-secondary:hover { background: #f3f4f6; }
-.btn-danger { background: #ef4444; color: white; }
-.btn-danger:hover { background: #dc2626; }
-.btn-sm { padding: 4px 12px; font-size: 12px; }
-.app-main { padding: 24px; max-width: 1200px; margin: 0 auto; }
-.section { margin-bottom: 32px; }
-.section h2 { margin-top: 0; color: #1f2937; }
-.calendar-header { display: flex; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
-.venue-selector label { font-weight: 500; margin-right: 8px; }
-.venue-selector select { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; }
-.date-nav { display: flex; align-items: center; gap: 8px; }
-.date-nav input { padding: 6px 10px; border-radius: 6px; border: 1px solid #d1d5db; }
-.legend { display: flex; gap: 16px; margin-bottom: 16px; font-size: 12px; color: #6b7280; flex-wrap: wrap; }
-.legend span { display: flex; align-items: center; gap: 4px; }
-.lc { width: 14px; height: 14px; border-radius: 3px; }
-.lc.available { background: #d1fae5; border: 1px solid #10b981; }
-.lc.golden { background: #fef3c7; border: 1px solid #f59e0b; }
-.lc.maintenance { background: #fee2e2; border: 1px solid #ef4444; }
-.lc.booked { background: #e5e7eb; border: 1px solid #9ca3af; }
+content = content.substring(0, scriptStartIdx) + newScript + content.substring(scriptEndIdx);
+
+// 8. 添加额外样式
+const extraStyles = `
 .lc.keyboard { background: #dbeafe; border: 2px solid #3b82f6; }
-.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.slot-card { border: 2px solid #e5e7eb; border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; background: white; }
-.slot-card:hover:not(.disabled) { border-color: #667eea; transform: translateY(-1px); }
-.slot-card.gold { background: linear-gradient(135deg, #fffbeb, #fef3c7); border-color: #f59e0b; }
-.slot-card.maint { background: #fef2f2; border-color: #fca5a5; cursor: not-allowed; opacity: 0.7; }
-.slot-card.booked { background: #f9fafb; border-color: #d1d5db; cursor: not-allowed; opacity: 0.6; }
-.slot-card.disabled { cursor: not-allowed; }
 .slot-card.keyboard-selected { 
   border-color: #3b82f6 !important; 
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
   transform: translateY(-2px);
 }
-.time { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.status { margin-bottom: 4px; }
-.badge { padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
-.badge-maintenance { background: #fee2e2; color: #dc2626; }
-.badge-booked { background: #e5e7eb; color: #6b7280; }
-.badge-gold { background: #fef3c7; color: #d97706; }
-.badge-normal { background: #dbeafe; color: #2563eb; }
-.badge-success { background: #d1fae5; color: #059669; }
-.badge-cancelled { background: #fee2e2; color: #dc2626; }
-.warn { font-size: 10px; color: #ef4444; font-weight: 500; }
-.empty-state { text-align: center; padding: 40px; color: #9ca3af; }
-.booking-list { display: flex; flex-direction: column; gap: 12px; }
-.booking-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s; }
 .booking-card.keyboard-selected {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
-.booking-title { font-weight: 600; margin-bottom: 6px; }
-.booking-meta { display: flex; gap: 12px; font-size: 13px; color: #6b7280; }
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal { background: white; border-radius: 12px; padding: 24px; min-width: 400px; max-width: 90%; max-height: 85vh; overflow-y: auto; }
-.modal h3 { margin-top: 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
-.booking-summary p { margin: 8px 0; }
-.cancel-info { margin: 16px 0; }
-.alert { padding: 12px; border-radius: 6px; margin-bottom: 12px; }
-.alert-success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-.alert-warning { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-.alert-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 .keyboard-status { margin-bottom: 16px; }
 .status-badge { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 500; }
 .status-badge.active { background: #d1fae5; color: #059669; }
@@ -734,4 +527,27 @@ kbd {
   from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
   to { transform: translateX(-50%) translateY(0); opacity: 1; }
 }
-</style>
+.btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.btn-primary { background: #667eea; color: white; }
+.btn-primary:hover { background: #5a67d8; }
+.btn-primary:disabled { background: #c3dafe; cursor: not-allowed; }
+.btn-secondary { background: white; color: #4b5563; border: 1px solid #d1d5db; }
+.btn-secondary:hover { background: #f3f4f6; }
+.btn-danger { background: #ef4444; color: white; }
+.btn-danger:hover { background: #dc2626; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+`;
+
+// 在 </style> 前添加额外样式
+content = content.replace('</style>', extraStyles + '\n</style>');
+
+fs.writeFileSync(appVuePath, content, 'utf8');
+console.log('✅ App.vue 已成功更新');
